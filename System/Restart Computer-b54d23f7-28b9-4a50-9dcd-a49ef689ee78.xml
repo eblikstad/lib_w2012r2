@@ -1,0 +1,45 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/json/wmi.json'>
+          <description>WMI conditions for the script.</description>
+        </option>
+        <option enforcedvalues='true' name='Force' required='true' value='True' values='False,True' />
+      </options>
+    </context>
+    <description><![CDATA[The first line is the short description, keep below 80 characters (guideline).
+The following lines are the detailed descriptions of the job. There is no need to describe options here, they have their own description.
+You may use markdown on these lines [Markdown Wiki](https://en.wikipedia.org/wiki/Markdown).]]></description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>System</group>
+    <id>b54d23f7-28b9-4a50-9dcd-a49ef689ee78</id>
+    <loglevel>INFO</loglevel>
+    <name>Restart Computer</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>false</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PS Script</description>
+        <node-step-plugin type='localexec'>
+          <configuration>
+            <entry key='command' value='powershell.exe -inputformat none -noninteractive -command .\tools\bin\restart-computer.ps1' />
+          </configuration>
+        </node-step-plugin>
+      </command>
+    </sequence>
+    <timeout>24h</timeout>
+    <uuid>b54d23f7-28b9-4a50-9dcd-a49ef689ee78</uuid>
+  </job>
+</joblist>

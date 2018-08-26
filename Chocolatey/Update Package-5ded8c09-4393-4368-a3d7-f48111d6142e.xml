@@ -1,0 +1,114 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/json/wmi.json' />
+        <option delimiter=' ' multivalued='true' name='Name' required='true' />
+        <option enforcedvalues='true' name='ForceX86' required='true' value='false' values='false,true' />
+      </options>
+    </context>
+    <description>Installs a Choco package.</description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>Chocolatey</group>
+    <id>5ded8c09-4393-4368-a3d7-f48111d6142e</id>
+    <loglevel>INFO</loglevel>
+    <name>Update Package</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>false</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PowerShell Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[# Copyright 2018 Espen Blikstad.
+# Licensed under the Apache License, Version 2.0.
+
+#requires -version 3
+<#
+.SYNOPSIS
+  Rundeck inline PowerShell script.
+.DESCRIPTION
+  This script uses Rundeck replacement tokens and they are set to PowerShell
+  variables in the parameter block as default values. 
+
+  Default error action is stop, and the error code is returned to Rundeck.
+.NOTES
+  Version:  3.0
+  Author:   Espen Blikstad
+  Purpose/change:
+  2018.08.03 EXTEBL: Version 3.0.
+#>
+param(
+    # Add all tokens to the parameter block
+    [string[]]$Condition = @'
+@option.Condition@
+'@,
+    [string[]]$SuccessCode = @'
+@option.SuccessCode@
+'@,
+    [string[]]$Name = @'
+@option.Name@
+'@,
+    [string[]]$ForceX86 = @'
+@option.ForceX86@
+'@
+)
+#region PowerShell preference variables
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$host.UI.RawUI.BufferSize = New-Object Management.Automation.Host.Size (120, 25)
+#endregion PowerShell preference variables
+
+#region Process script parameters
+if($Condition){$Condition = $Condition.Split(";")}
+else{$Condition = @()}
+if($SuccessCode){$SuccessCode = $SuccessCode.Split(";")}
+else{$SuccessCode = @()}
+#endregion Process script parameters
+
+#region Script conditional evaluation
+foreach($expression in $Condition) {
+   if($expression -like "SELECT *"){
+      if(-not(Get-CimInstance -Query $expression)) {Exit}
+   }
+   else{
+      if(-not(Invoke-Command -ScriptBlock ([Scriptblock]::Create($expression)))) {Exit}
+   }
+}
+#endregion Script conditional evaluation
+
+#region Script
+if($ForceX86 -ne "true"){
+   choco.exe upgrade -r -y --no-progress $Name
+}
+else {
+   choco.exe upgrade -r -y --no-progress --x86 $Name
+}
+#endregion Script
+
+#region Exit code evaluation
+# If we have a non-zero return code only return it if not defined as success code.
+Write-Output "RUNDECK:DATA:ExitCode=$lastexitcode"
+if($lastexitcode -ne 0 -and $SuccessCode -contains $lastexitcode){Exit}
+
+# $lastexitcode contains the exit code of the last Windows-based program that was run.
+[Environment]::Exit($lastexitcode)
+#endregion Exit code evaluation
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <uuid>5ded8c09-4393-4368-a3d7-f48111d6142e</uuid>
+  </job>
+</joblist>

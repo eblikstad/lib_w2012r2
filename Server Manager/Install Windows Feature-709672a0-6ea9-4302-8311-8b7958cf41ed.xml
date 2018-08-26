@@ -1,0 +1,97 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/json/wmi.json'>
+          <description>WMI conditions for the script.</description>
+        </option>
+        <option enforcedvalues='true' name='IncludeManagementTools' value='false' values='false,true' />
+        <option delimiter=',' multivalued='true' name='Name' />
+        <option name='Source'>
+          <description>Specifies the path to feature files, if the files are not available in the local feature store of the target computer or VHD.</description>
+        </option>
+      </options>
+    </context>
+    <description><![CDATA[Installs one or more Windows roles, role services, or features.
+The installation may require a restart depending on what is being installed.]]></description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>Server Manager</group>
+    <id>709672a0-6ea9-4302-8311-8b7958cf41ed</id>
+    <loglevel>INFO</loglevel>
+    <multipleExecutions>true</multipleExecutions>
+    <name>Install Windows Feature</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>false</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PS Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[#requires -version 3
+#requires -modules ServerManager
+<#
+.SYNOPSIS
+  Rundeck inline PowerShell script.
+.DESCRIPTION
+  Inline scripts are used for simple procedures, typical 25-100 lines in length.
+  Job options are accessible in the script using named tokens, ie. @option.Parameter1@. Warning, tokens are case sensitive.
+  Remember to use quotes if needed, they are howeer required if the option is optional (empty options removes token).
+  The @ character must be escaped using \@ if not used with token, and avoid using tokens to build file system paths.
+  Example: Get-Job -Name "@option.Parameter1@"
+  
+  Default error action is stop, and the error code is returned to Rundeck.
+  You may return custom error codes with the Exit command and an error code.
+  Example: Exit 13
+.NOTES
+  Version:  2.5
+  Author:   Espen Blikstad
+  Purpose/change:
+  26.03.2017 EXTEBL: Changed description of @ character.
+  18.08.2017 EXTEBL: Added support for PowerShell expressions in script conditions.
+  10.11.2017 EXTEBL: Fixed detection of WMI query.
+#>
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(512,50)
+
+# Check script conditions, PowerShell expressions & WMI queries
+$conditions = {@option.Condition@}
+"$conditions".Split(";") | ?{$_.Trim() -ne  ""} | %{
+   if($_ -like "select *"){
+      if(-not(gwmi -query $_)) {exit}
+   }
+   else{
+      if(-not(invoke-command -ScriptBlock ([Scriptblock]::Create($_)))) {exit}
+   }
+}
+
+$optional = @{}
+# Source parameter is only supported on Install-WindowsFeature 2.0.0 and newer
+if("@option.Source@" -and (Get-Command Add-WindowsFeature).Version -ge [version]"2.0.0") {
+    $optional.Source = "@option.Source@"
+}
+if("@option.IncludeManagementTools@" -like "true") {
+    $optional.IncludeManagementTools = $true
+}
+$feature = "@option.Name@".Split(",")
+Add-WindowsFeature -Name $feature @optional | Out-Null
+Write-Output "Installed the module(s): $feature"
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -nologo -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <timeout>2h</timeout>
+    <uuid>709672a0-6ea9-4302-8311-8b7958cf41ed</uuid>
+  </job>
+</joblist>

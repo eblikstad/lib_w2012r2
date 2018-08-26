@@ -1,0 +1,106 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/json/wmi.json' />
+      </options>
+    </context>
+    <description>Installs and configures the native Chocolatey client.</description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>true</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>Chocolatey</group>
+    <id>778ba8e4-1e24-48b1-a98a-076955891a51</id>
+    <loglevel>INFO</loglevel>
+    <name>Install Chocolatey</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>dc03ri</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>false</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PowerShell Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[# Copyright 2018 Espen Blikstad.
+# Licensed under the Apache License, Version 2.0.
+
+#requires -version 3
+<#
+.SYNOPSIS
+  Rundeck inline PowerShell script.
+.DESCRIPTION
+  This script uses Rundeck replacement tokens and they are set to PowerShell
+  variables in the parameter block as default values. 
+
+  Default error action is stop, and the error code is returned to Rundeck.
+.NOTES
+  Version:  3.0
+  Author:   Espen Blikstad
+  Purpose/change:
+  2018.08.03 EXTEBL: Version 3.0.
+#>
+param(
+    # Add all tokens to the parameter block
+    [string[]]$Condition = @'
+@option.Condition@
+'@,
+    [string[]]$SuccessCode = @'
+@option.SuccessCode@
+'@
+)
+#region PowerShell preference variables
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$host.UI.RawUI.BufferSize = New-Object Management.Automation.Host.Size (120, 25)
+#endregion PowerShell preference variables
+
+#region Process script parameters
+if($Condition){$Condition = $Condition.Split(";")}
+else{$Condition = @()}
+if($SuccessCode){$SuccessCode = $SuccessCode.Split(";")}
+else{$SuccessCode = @()}
+#endregion Process script parameters
+
+#region Script conditional evaluation
+foreach($expression in $Condition) {
+   if($expression -like "SELECT *"){
+      if(-not(Get-CimInstance -Query $expression)) {Exit}
+   }
+   else{
+      if(-not(Invoke-Command -ScriptBlock ([Scriptblock]::Create($expression)))) {Exit}
+   }
+}
+#endregion Script conditional evaluation
+
+#region Script
+if(Get-Command "choco.exe") {
+    Write-Warning "Chocolatey already installed."
+    Exit
+    }
+Copy-Item "@globals.lib_w2012r2.repository@\Chocolatey\chocolateyInstall.ps1" "$env:Temp"
+& "$env:Temp\chocolateyInstall.ps1"
+#endregion Script
+
+#region Exit code evaluation
+# If we have a non-zero return code only return it if not defined as success code.
+Write-Output "RUNDECK:DATA:ExitCode=$lastexitcode"
+if($lastexitcode -ne 0 -and $SuccessCode -contains $lastexitcode){Exit}
+
+# $lastexitcode contains the exit code of the last Windows-based program that was run.
+[Environment]::Exit($lastexitcode)
+#endregion Exit code evaluation
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <uuid>778ba8e4-1e24-48b1-a98a-076955891a51</uuid>
+  </job>
+</joblist>

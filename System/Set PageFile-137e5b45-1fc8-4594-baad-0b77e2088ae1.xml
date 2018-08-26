@@ -1,0 +1,182 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/json/wmi.json' />
+      </options>
+    </context>
+    <description></description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>System</group>
+    <id>137e5b45-1fc8-4594-baad-0b77e2088ae1</id>
+    <loglevel>INFO</loglevel>
+    <name>Set PageFile</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>true</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PowerShell Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[#requires -version 2
+<#
+.SYNOPSIS
+  Returns the PowerShell engine version using the VMS log format
+.DESCRIPTION
+  The $PSVersionTable built-in variable is the most reliable method of determining the PowerShell version.
+  Uses the Write-VLog function to return the PowerShell version in the VMS log format.
+  The PowerShell major version is returned in the Data column and a comment in the Message column.
+.PARAMETER <Parameter_Name>
+    <Brief description of parameter input required. Repeat this attribute if required>
+.INPUTS
+  None
+.OUTPUTS
+  <Outputs if any, otherwise state None - example: Log file stored in C:\Windows\Temp\<name>.log>
+.NOTES
+  Version:        1.0
+  Author:         Espen Blikstad
+  Creation Date:  05.02.2016
+  Purpose/Change: Initial script development
+#>
+
+function Set-PageFile
+{
+    <#
+    .SYNOPSIS
+        Sets Page File to custom size
+ 
+    .DESCRIPTION
+        Applies the given values for initial and maximum page file size.
+ 
+    .PARAMETER Path
+        The page file's fully qualified file name (such as C:\pagefile.sys)
+ 
+    .PARAMETER InitialSize
+        The page file's initial size [MB]
+ 
+    .PARAMETER MaximumSize
+        The page file's maximum size [MB]
+ 
+    .EXAMPLE
+        C:\PS> Set-PageFile "C:\pagefile.sys" 4096 6144
+    #>
+ 
+    [CmdletBinding(SupportsShouldProcess=$True)]
+    param (
+        [Parameter(Mandatory=$true,Position=0)]
+        [ValidateNotNullOrEmpty()]
+        [String]
+        $Path,
+        [Parameter(Mandatory=$true,Position=1)]
+        [ValidateNotNullOrEmpty()]
+        [Int]
+        $InitialSize,
+        [Parameter(Mandatory=$true,Position=2)]
+        [ValidateNotNullOrEmpty()]
+        [Int]
+        $MaximumSize
+    )
+     
+    Set-PSDebug -Strict
+ 
+    $ComputerSystem = $null
+    $CurrentPageFile = $null
+    $Modified = $false
+ 
+    # Disables automatically managed page file setting first
+    $ComputerSystem = Get-WmiObject -Class Win32_ComputerSystem -EnableAllPrivileges
+    if ($ComputerSystem.AutomaticManagedPagefile)
+    {
+        $ComputerSystem.AutomaticManagedPagefile = $false
+        if ($PSCmdlet.ShouldProcess("$($ComputerSystem.Path.Server)", "Disable automatic managed page file"))
+        {
+            $ComputerSystem.Put()
+        }
+    }
+ 
+    $CurrentPageFile = Get-WmiObject -Class Win32_PageFileSetting
+    if ($CurrentPageFile.Name -eq $Path)
+    {
+        # Keeps the existing page file
+        if ($CurrentPageFile.InitialSize -ne $InitialSize)
+        {
+            $CurrentPageFile.InitialSize = $InitialSize
+            $Modified = $true
+        }
+        if ($CurrentPageFile.MaximumSize -ne $MaximumSize)
+        {
+            $CurrentPageFile.MaximumSize = $MaximumSize
+            $Modified = $true
+        }
+        if ($Modified)
+        {
+            if ($PSCmdlet.ShouldProcess("Page file $Path", "Set initial size to $InitialSize and maximum size to $MaximumSize"))
+            {
+                $CurrentPageFile.Put()
+            }
+        }
+    }
+    else
+    {
+        # Creates a new page file
+        if ($PSCmdlet.ShouldProcess("Page file $($CurrentPageFile.Name)", "Delete old page file"))
+        {
+            $CurrentPageFile.Delete()
+        }
+        if ($PSCmdlet.ShouldProcess("Page file $Path", "Set initial size to $InitialSize and maximum size to $MaximumSize"))
+        {
+            Set-WmiInstance -Class Win32_PageFileSetting -Arguments @{Name=$Path; InitialSize = $InitialSize; MaximumSize = $MaximumSize}
+        }
+    }
+}  
+
+$ErrorActionPreference = "Stop"
+
+# Check WMI queries for script condition
+"@option.Condition@".Split(";") | ?{$_.Trim() -ne  ""} | %{ if(-not(gwmi -query $_)) {exit}}
+
+
+
+   $computer = get-wmiobject -Class win32_computersystem
+   $memory = $computer.TotalPhysicalMemory/1GB
+
+   switch($memory)
+   {
+      {$_ -le 4 }   { $InitialSize = 1024 ; $MaxSize = 4096 ; break }
+      {$_ -le 8 }   { $InitialSize = 1536 ; $MaxSize = 4096 ; break }
+      {$_ -le 12 }   { $InitialSize = 1536 ; $MaxSize = 4096 ; break }
+      {$_ -le 16 }   { $InitialSize = 2048 ; $MaxSize = 4096 ; break }
+      {$_ -le 24 }   { $InitialSize = 3072 ; $MaxSize = 6144 ; break }
+      {$_ -le 32 }   { $InitialSize = 4096 ; $MaxSize = 8192 ; break }
+      {$_ -le 48 }   { $InitialSize = 5020 ; $MaxSize = 10240 ; break }
+      {$_ -le 64 }   { $InitialSize = 6144 ; $MaxSize = 12288 ; break }
+      {$_ -le 96 }   { $InitialSize = 7168 ; $MaxSize = 14336 ; break }
+      {$_ -le 128 }   { $InitialSize = 8192 ; $MaxSize = 16384 ; break }
+      {$_ -le 192 }   { $InitialSize = 10240 ; $MaxSize = 20480 ; break }
+      {$_ -le 256 }   { $InitialSize = 12288 ; $MaxSize = 24572 ; break }
+      {$_ -le 384 }   { $InitialSize = 14336 ; $MaxSize = 28672 ; break }
+      {$_ -le 512 }   { $InitialSize = 16384 ; $MaxSize = 32768 ; break }
+
+   }
+   
+   Set-PageFile "C:\pagefile.sys" $InitialSize $MaxSize | Out-Null
+   Write-Output "Set paging file ""C:\pagefile.sys"" to intial size $InitialSize MB and maximum size $MaxSize MB."
+
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <uuid>137e5b45-1fc8-4594-baad-0b77e2088ae1</uuid>
+  </job>
+</joblist>

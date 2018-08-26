@@ -1,0 +1,139 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/option/condition.json'>
+          <description>Specifies conditions for the job. Can be CIM queries and PowerShell statements.</description>
+        </option>
+        <option name='Set' required='true' value='100'>
+          <description>Specifies the configuration set ID to use.</description>
+        </option>
+        <option delimiter=';' multivalued='true' name='Task' required='true' value='Internet Cache Files' values='Active Setup Temp Folders,Downloaded Program Files,Internet Cache Files,Offline Pages Files,Previous Installations,Recycle Bin,Service Pack Cleanup,System error memory dump files,System error minidump files,Temporary Setup Files,Thumbnail Cache,Update Cleanup,Upgrade Discarded Files,Windows Error Reporting Archive Files,Windows Error Reporting Queue Files,Windows Error Reporting System Archive Files,Windows Error Reporting System Queue Files,Windows Upgrade Log Files'>
+          <description>Specifies the cleanup task to run.</description>
+        </option>
+      </options>
+    </context>
+    <description>Cleanup Windows and remove unecessary files using the Disk Cleanup Tool.</description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>true</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>System</group>
+    <id>2b29ff80-2f85-4ec4-9b34-321e3bb56b28</id>
+    <loglevel>INFO</loglevel>
+    <name>Cleanup Disk</name>
+    <nodeFilterEditable>false</nodeFilterEditable>
+    <nodefilters>
+      <filter>.*</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>false</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PS Script</description>
+        <fileExtension>ps1</fileExtension>
+        <plugins>
+          <LogFilter type='key-value-data'>
+            <config>
+              <logData>false</logData>
+              <regex>^RUNDECK:DATA:(.+?)\s*=\s*(.+)$</regex>
+            </config>
+          </LogFilter>
+        </plugins>
+        <script><![CDATA[#requires -version 3
+<#
+.SYNOPSIS
+  Rundeck inline PowerShell script.
+.DESCRIPTION
+  Inline scripts are used for simple procedures, typical 25-100 lines in length.
+  Job options needs to be added to the PowerShell param block, ie. @option.Parameter1@. Warning, tokens are case sensitive.
+  The @ character must be escaped using \@.
+
+  Default error action is stop, and the error code is returned to Rundeck.
+.NOTES
+  Version:  3.0
+  Author:   Espen Blikstad
+  Purpose/change:
+  03.08.2018 EXTEBL: Version 3.0.
+#>
+Param(
+    # Add all tokens to the parameter block
+    [string[]]$Condition = ([string]{r@option.Condition@}).Remove(0,1).Split(";"),
+    [string[]]$Task = ([string]{r@option.Task@}).Remove(0,1).Split(";"),
+    [int]$Set = ([string]{r@option.Set@}).Remove(0,1)
+)
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(150,50)
+
+# Check script conditions, PowerShell expressions & WMI queries
+$Condition | ?{$_.Trim() -ne  ""} | %{
+   if($_ -like "select *"){
+      if(-not(gwmi -query $_)) {exit}
+   }
+   else{
+      if(-not(invoke-command -ScriptBlock ([Scriptblock]::Create($_)))) {exit}
+   }
+}
+
+# We support Windows 2008 R2 & windows 2012 R2
+$os = gcim -Query "select * from win32_operatingsystem"
+if($os.Version -like "6.1.7601"){}
+elseif($os.Version -like "6.2.9200"){}
+elseif($os.Version -like "6.3.9600"){
+    if(!(Get-Command cleanmgr.exe -EA SilentlyContinue)){
+        Write-Warning "Desktop Experience is required on Windows 2012 R2."
+        Exit
+    }
+}
+else {
+    Write-Warning "Job is not supported on this Windows version."
+    Exit
+}
+
+if(!(Get-Command cleanmgr.exe -EA SilentlyContinue)){
+    $dir = dir $env:SystemRoot\WinSxS\amd64_microsoft-windows-cleanmgr_* | Sort Name -Descending | Select -First 1
+    copy (Join-Path $dir "cleanmgr.exe") $env:SystemRoot\System32\
+    $dir = dir $env:SystemRoot\WinSxS\amd64_microsoft-windows-cleanmgr.resources_* | Sort Name -Descending | Select -First 1
+    copy (Join-Path $dir "cleanmgr.exe.mui") $env:SystemRoot\System32\en-us\
+    Write-Output "Installed the Disk Cleanup Tool (cleanupmgr.exe)."
+}
+
+
+$RegPath = "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\VolumeCaches"
+$flag = $false
+
+foreach ($regKey in (Get-ChildItem -Path $RegPath)) {
+   $regKeyName = [System.IO.Path]::GetFileName($regKey)
+   if($regKeyName -in $Task){
+      New-ItemProperty -Path (Join-Path $RegPath $regKeyName) -Name ("StateFlags" + ("{0:0000}" -f $Set)) -Value 2 -PropertyType DWORD -Force | Out-Null
+      Write-Output "Enabled task: $regKeyName"
+      $flag = $true
+   }
+   else {
+      New-ItemProperty -Path (Join-Path $RegPath $regKeyName) -Name ("StateFlags" + ("{0:0000}" -f $Set)) -Value 0 -PropertyType DWORD -Force | Out-Null
+   }
+}
+if(!$flag){
+    Write-Warning "No task selected, nothing to do."
+    Exit
+}
+
+Write-Output "Starting Disk Cleanup Tool."
+cleanmgr.exe /d $env:SystemDrive /SAGERUN:$Set | Out-Null
+
+Wait-Process -Name "dismhost" -EA SilentlyContinue
+
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -nologo -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <timeout>1h</timeout>
+    <uuid>2b29ff80-2f85-4ec4-9b34-321e3bb56b28</uuid>
+  </job>
+</joblist>

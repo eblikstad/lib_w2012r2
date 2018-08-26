@@ -1,0 +1,128 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/json/wmi.json'>
+          <description>WMI conditions for the script.</description>
+        </option>
+        <option name='OlderThan' required='true' value='0'>
+          <description>Only install updates approved earlier than the specified number of days.</description>
+        </option>
+      </options>
+    </context>
+    <description><![CDATA[Installs Windows Updates using the computer configuration, typically WSUS.
+Restart is suppressed and pending restarts needs to be handled separately.
+The job uses the PowerShell module PSWindowsUpdate and runs the update process in a separate local session.]]></description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>Windows Update</group>
+    <id>0c475ed8-e8f9-45dd-8436-e42cc3dbf5ad</id>
+    <loglevel>INFO</loglevel>
+    <multipleExecutions>true</multipleExecutions>
+    <name>Install Windows Updates</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>noserver</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>true</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PS Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[#Requires -version 4
+#Requires -Modules @{ModuleName="PSWindowsUpdate";ModuleVersion="2.0.0.2"}
+<#
+.SYNOPSIS
+  Rundeck inline PowerShell script.
+.DESCRIPTION
+  Inline scripts are used for simple procedures, typical 25-100 lines in length.
+  Job options are accessible in the script using named tokens, ie. @option.Parameter1@. Warning, tokens are case sensitive.
+  Remember to use quotes if needed, they are howeer required if the option is optional (empty options removes token).
+  The @ character must be escaped using \@ if not used with token, and avoid using tokens to build file system paths.
+  Example: Get-Job -Name "@option.Parameter1@"
+  
+  Default error action is stop, and the error code is returned to Rundeck.
+  You may return custom error codes with the Exit command and an error code.
+  Example: Exit 13
+.NOTES
+  18.01.2017 EXTEBL: Reverted to -command line switch due to a bug.
+  26.03.2017 EXTEBL: Changed description of @ character.
+  05.01.2018 EXTEBL: Updated for PSWindowsUpdate 2.0.0.2.
+#>
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(512,50)
+
+# Check WMI queries for script conditions
+"@option.Condition@".Split(";") | ?{$_.Trim() -ne  ""} | %{ if(-not(gwmi -query $_)) {exit}}
+
+$taskpath = "\Microsoft\Windows\PowerShell\ScheduledJobs"
+New-Item "$env:temp\Rundeck-@job.execid@.txt" -Type File -Force -EA 0 | Out-Null
+
+# Register job that runs ipconfig.exe.
+Register-ScheduledJob -Name "Rundeck-@job.execid@" -RunNow -ScriptBlock {
+    $host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(512,50)
+    #Invoke-Command -ScriptBlock {@option.ScriptBlock@} | %{$_ | Out-File -Append "$env:temp\Rundeck-@job.execid@.txt"}
+    Invoke-Command -ScriptBlock {
+        $kb = ""
+        [int]$olderthan = "@option.OlderThan@"
+        #Write-Output "Excluding updates $olderthan"
+        if($olderthan -ne 0) {
+            $kb = get-wulist | ?{$_.LastDeploymentChangeTime -gt $(Get-Date).AddDays(-$olderthan)} | %{"$($_.KB)"}
+            #Write-Output "Excluding updates $kb"
+        }
+        get-wuinstall -Install -acceptall -confirm:$false -NotKBArticleID $kb -ignorereboot -verbose *>&1
+        
+    } | Out-File -Append "$env:temp\Rundeck-@job.execid@.txt"
+    
+} | Out-Null
+
+#While(!(Get-Job | ? Name -eq "Rundeck-@job.execid@")){Sleep 1}
+While(!(Test-Path "$env:temp\Rundeck-@job.execid@.txt")){Sleep 1}
+
+$path = "$env:temp\Rundeck-@job.execid@.txt"
+$reader = new-object System.IO.StreamReader(New-Object IO.FileStream($path, "Open", "Read", "ReadWrite, Delete"))
+
+# Starting a scheduled job is async, Wait-Job should either fail or timeout while waiting
+while(!(Wait-Job -Name "Rundeck-@job.execid@" -Timeout 1 -EA 0)) {
+    Sleep 1
+    while(!($reader.EndOfStream)){$reader.ReadLine()}
+}
+Import-Module Carbon -Prefix C
+while(Get-CScheduledTask -Name "$taskpath\Rundeck-@job.execid@" | ? Status -in "Running","Queued"){Sleep 1}
+while(!($reader.EndOfStream)){$reader.ReadLine()}
+$reader.Close()
+
+del $path
+
+# Wait for job to finish
+#Wait-Job -Name "Rundeck-@job.execid@" | Out-Null
+$hresult = (Get-Job -Name "Rundeck-@job.execid@").ChildJobs[0].JobStateInfo.Reason.HResult
+#Receive-Job -Name "Rundeck-@job.execid@" -EA Continue
+
+# Remove scheduled job
+While(Get-Job | ? Name -eq "Rundeck-@job.execid@"){
+    Sleep -Milliseconds 250
+    Try{
+       Unregister-ScheduledJob -Name "Rundeck-@job.execid@"
+       }
+   Catch{}
+}
+
+Exit $hresult
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -nologo -file</scriptinterpreter>
+      </command>
+    </sequence>
+    <timeout>24h</timeout>
+    <uuid>0c475ed8-e8f9-45dd-8436-e42cc3dbf5ad</uuid>
+  </job>
+</joblist>
