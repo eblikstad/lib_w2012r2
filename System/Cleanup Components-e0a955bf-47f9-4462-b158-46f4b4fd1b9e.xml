@@ -1,0 +1,93 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' value='SELECT * FROM Win32_OperatingSystem WHERE Version LIKE &apos;6.3%&apos; AND (ProductType=2 OR ProductType=3)' valuesUrl='file:/option/condition.json'>
+          <description>Specifies conditions for the job. Can be CIM queries and PowerShell statements.</description>
+        </option>
+        <option delimiter=';' multivalued='true' name='SuccessCode' />
+      </options>
+    </context>
+    <description>Cleanup Windows component store and remove every superseeded component.</description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>true</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>System</group>
+    <id>e0a955bf-47f9-4462-b158-46f4b4fd1b9e</id>
+    <loglevel>INFO</loglevel>
+    <name>Cleanup Components</name>
+    <nodeFilterEditable>false</nodeFilterEditable>
+    <nodefilters>
+      <filter>.*</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>false</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PS Script</description>
+        <fileExtension>ps1</fileExtension>
+        <plugins>
+          <LogFilter type='key-value-data'>
+            <config>
+              <logData>false</logData>
+              <regex>^RUNDECK:DATA:(.+?)\s*=\s*(.+)$</regex>
+            </config>
+          </LogFilter>
+        </plugins>
+        <script><![CDATA[#requires -version 3
+<#
+.SYNOPSIS
+  Rundeck inline PowerShell script.
+.DESCRIPTION
+  Inline scripts are used for simple procedures, typical 25-100 lines in length.
+  Job options needs to be added to the PowerShell param block, ie. @option.Parameter1@. Warning, tokens are case sensitive.
+  The @ character must be escaped using \@.
+
+  Default error action is stop, and the error code is returned to Rundeck.
+.NOTES
+  Version:  3.0
+  Author:   Espen Blikstad
+  Purpose/change:
+  03.08.2018 EXTEBL: Version 3.0.
+#>
+Param(
+    # Add all tokens to the parameter block
+    [string[]]$Condition = ([string]{r@option.Condition@}).Remove(0,1).Split(";"),
+    [string[]]$SuccessCode = ([string]{r@option.SuccessCode@}).Remove(0,1).Split(";")
+)
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(150,50)
+
+# Check script conditions, PowerShell expressions & WMI queries
+$Condition | ?{$_.Trim() -ne  ""} | %{
+   if($_ -like "select *"){
+      if(-not(gwmi -query $_)) {exit}
+   }
+   else{
+      if(-not(invoke-command -ScriptBlock ([Scriptblock]::Create($_)))) {exit}
+   }
+}
+
+Write-Output "Starting component store cleanup."
+dism.exe /online /Cleanup-Image /StartComponentCleanup /ResetBase | Out-Null
+
+# If we have a non-zero return code only return it if not defined as success code.
+if($lastexitcode -ne 0 -and $SucccessCode -contains $lastexitcode){Exit}
+
+# $lastexitcode contains the exit code of the last Windows-based program that was run.
+[Environment]::Exit($lastexitcode)
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -nologo -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <timeout>1h</timeout>
+    <uuid>e0a955bf-47f9-4462-b158-46f4b4fd1b9e</uuid>
+  </job>
+</joblist>
