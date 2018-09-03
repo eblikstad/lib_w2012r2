@@ -1,0 +1,142 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/option/condition.json'>
+          <description>Specifies conditions for the job. Can be CIM queries and PowerShell statements.</description>
+        </option>
+        <option name='CBS' value='true' />
+        <option name='Retention' required='true' value='7' />
+      </options>
+    </context>
+    <description></description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>true</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>System</group>
+    <id>467b6b62-3ef1-47b7-857d-dc2763fe8480</id>
+    <loglevel>INFO</loglevel>
+    <name>Remove Log Files</name>
+    <nodeFilterEditable>false</nodeFilterEditable>
+    <nodefilters>
+      <filter>.*</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>false</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PS Script</description>
+        <fileExtension>ps1</fileExtension>
+        <plugins />
+        <script><![CDATA[#requires -version 3
+<#
+.SYNOPSIS
+  Rundeck inline PowerShell script.
+.DESCRIPTION
+  Inline scripts are used for simple procedures, typical 25-100 lines in length.
+  Job options needs to be added to the PowerShell param block, ie. @option.Parameter1@. Warning, tokens are case sensitive.
+  The @ character must be escaped using \@.
+
+  Default error action is stop, and the error code is returned to Rundeck.
+.NOTES
+  Version:  3.0
+  Author:   Espen Blikstad
+  Purpose/change:
+  03.08.2018 EXTEBL: Version 3.0.
+#>
+Param(
+    # Add all tokens to the parameter block
+    [string[]]$Condition = ([string]{r@option.Condition@}).Remove(0,1).Split(";"),
+    [string[]]$SuccessCode = ([string]{r@option.SuccessCode@}).Remove(0,1).Split(";"),
+    [boolean]$CBS = [boolean]"@option.CBS@",
+    [boolean]$Retention = [boolean]"@option.Retention@"
+)
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(150,50)
+
+# Check script conditions, PowerShell expressions & WMI queries
+$Condition | ?{$_.Trim() -ne  ""} | %{
+   if($_ -like "select *"){
+      if(-not(gwmi -query $_)) {exit}
+   }
+   else{
+      if(-not(invoke-command -ScriptBlock ([Scriptblock]::Create($_)))) {exit}
+   }
+}
+
+function Remove-LogFile
+{
+    <#
+    .SYNOPSIS
+        Removes old rolling logfiles 
+ 
+    .DESCRIPTION
+        Searches rolling logfiles at the path and deletes the older files.
+        The specified prefix is searched and the date format is parsed.
+ 
+    .PARAMETER Path
+        Path to the directory containing the rolling logfiles
+ 
+    .PARAMETER Prefix
+        Filename prefix, i.e. HttpProxy_
+ 
+    .PARAMETER Days
+        Number of days to keep logfiles
+
+    .PARAMETER Format
+        Date format 
+ 
+    .EXAMPLE
+        C:\PS> Remove-LogFile "C:\inetpub\logs\LogFiles\W3SVC1" "u_ex" 5 "yyMMdd"
+    #>
+ 
+    [CmdletBinding(SupportsShouldProcess=$True)]
+    param (
+        [Parameter(Mandatory=$true,Position=0)]
+        [ValidateNotNullOrEmpty()]
+        [String]
+        $Path,
+        [Parameter(Mandatory=$true,Position=1)]
+        [ValidateNotNullOrEmpty()]
+        [String]
+        $Prefix,
+        [Parameter(Mandatory=$false,Position=2)]
+        [int]
+        $Days = 7,
+        [Parameter(Mandatory=$false,Position=3)]
+        [String]
+        $Format = "yyyyMMdd" ,
+        [Parameter(Mandatory=$false,Position=4)]
+        [switch]
+        $UseLastWriteTime = $false		
+    )
+
+	if($UseLastWriteTime) {
+       dir "$path\$prefix*" -File | ?{$(Get-Date).AddDays(-$days) -gt $_.LastWriteTime} | %{del $_ -ea 0}
+	}
+	else {
+       $regex = $prefix.Replace("*",".*").Replace("?",".")
+       #Write-Host $regex
+       dir "$path\$prefix*" -File | ?{$(Get-Date).AddDays(-$days) -gt [datetime]::ParseExact($($_.Name -replace $regex, "").Substring(0,$format.Length),$format,$null)} | %{del $_ -ea 0}
+	}
+	
+}
+
+if($CBS) {
+    Remove-LogFile -Path "$env:SystemRoot\Logs\CBS" -Prefix "CbsPersist_" -Days $Retention
+}
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -nologo -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <timeout>1h</timeout>
+    <uuid>467b6b62-3ef1-47b7-857d-dc2763fe8480</uuid>
+  </job>
+</joblist>
