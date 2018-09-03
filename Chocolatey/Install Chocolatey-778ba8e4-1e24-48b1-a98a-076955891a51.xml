@@ -80,7 +80,7 @@ foreach($expression in $Condition) {
 #endregion Script conditional evaluation
 
 #region Script
-if(Get-Command "choco.exe") {
+if(Get-Command "choco.exe" -ErrorAction SilentlyContinue) {
     Write-Warning "Chocolatey already installed."
     Exit
     }
