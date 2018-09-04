@@ -66,7 +66,7 @@ param(
 #region PowerShell preference variables
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
-$host.UI.RawUI.BufferSize = New-Object Management.Automation.Host.Size (120, 25)
+$host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(512,50)
 #endregion PowerShell preference variables
 
 #region Process script parameters
