@@ -5,9 +5,13 @@
         <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/json/wmi.json' />
         <option delimiter=' ' multivalued='true' name='Name' required='true' />
         <option enforcedvalues='true' name='ForceX86' required='true' value='false' values='false,true' />
+        <option delimiter=';' multivalued='true' name='SuccessCode' value='3010' />
+        <option name='Version'>
+          <description>Specifies the exact version of the package to install.</description>
+        </option>
       </options>
     </context>
-    <description>Installs a Choco package.</description>
+    <description>Installs or updates a Chocolatey package.</description>
     <dispatch>
       <excludePrecedence>true</excludePrecedence>
       <keepgoing>true</keepgoing>
@@ -61,6 +65,9 @@ param(
 '@,
     [string[]]$ForceX86 = @'
 @option.ForceX86@
+'@,
+    [string[]]$Version = @'
+@option.Version@
 '@
 )
 #region PowerShell preference variables
@@ -88,17 +95,19 @@ foreach($expression in $Condition) {
 #endregion Script conditional evaluation
 
 #region Script
-if($ForceX86 -ne "true"){
-   choco.exe upgrade -r -y --no-progress $Name
+$parameter = @()
+if($ForceX86 -like "true"){
+    $parameter += "--x86"
 }
-else {
-   choco.exe upgrade -r -y --no-progress --x86 $Name
+if($Version){
+    $parameter += "--version=" + $Version
 }
+choco.exe upgrade -r -y --no-progress $Name @Parameter
 #endregion Script
 
 #region Exit code evaluation
 # If we have a non-zero return code only return it if not defined as success code.
-Write-Output "RUNDECK:DATA:ExitCode=$lastexitcode"
+#Write-Output "RUNDECK:DATA:ExitCode=$lastexitcode"
 if($lastexitcode -ne 0 -and $SuccessCode -contains $lastexitcode){Exit}
 
 # $lastexitcode contains the exit code of the last Windows-based program that was run.
