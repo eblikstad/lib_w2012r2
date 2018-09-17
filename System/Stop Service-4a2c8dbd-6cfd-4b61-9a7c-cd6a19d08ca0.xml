@@ -8,7 +8,7 @@
         <option name='Name' required='true'>
           <description>Service name (single service).</description>
         </option>
-        <option name='Timeout' required='true' value='300'>
+        <option name='Timeout' required='true' value='600'>
           <description>Timeout in seconds before a pending stopping service process is killed.</description>
         </option>
       </options>
@@ -78,11 +78,11 @@ If($service.Status -ne "Stopped") {
 $service = Get-Service "@option.Name@"
 
 If($service.Status -ne "Stopped") {
-    $id = gcim -ClassName Win32_Service -Filter "Name LIKE '@option.Name@'" | Select-Object -ExpandProperty ProcessId
-    Stop-Process -Id $id -Force
-    Write-Warning "Killed the service process $id."
+    #$id = gcim -ClassName Win32_Service -Filter "Name LIKE '@option.Name@'" | Select-Object -ExpandProperty ProcessId
+    #Stop-Process -Id $id -Force
+    #Write-Warning "Killed the service process $id."
+    throw [System.TimeoutException]::New('Timeout while waiting for service to stop.')
     }
-
 ]]></script>
         <scriptargs />
         <scriptinterpreter>powershell.exe -inputformat none -noninteractive -nologo -command</scriptinterpreter>
