@@ -1,0 +1,92 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/json/wmi.json'>
+          <description>WMI conditions for the script.</description>
+        </option>
+        <option name='Path' required='true'>
+          <description>Specifies the local folder path.</description>
+        </option>
+      </options>
+    </context>
+    <description><![CDATA[Removes files since last restart and empty directories recursively.
+Only local paths are supported and they must be at least 2 levels deep.]]></description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>System</group>
+    <id>da8db682-49db-4917-8905-270bb70fc268</id>
+    <loglevel>INFO</loglevel>
+    <name>Cleanup Folder</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>false</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PS Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[#requires -version 3
+<#
+.SYNOPSIS
+  Rundeck inline PowerShell script.
+.DESCRIPTION
+  Inline scripts are used for simple procedures, typical 25-100 lines in length.
+  Job options are accessible in the script using named tokens, ie. @option.Parameter1@. Warning, tokens are case sensitive.
+  Remember to use quotes if needed, they are howeer required if the option is optional (empty options removes token).
+  The @ character must be escaped using \@ if not used with token, and avoid using tokens to build file system paths.
+  Example: Get-Job -Name "@option.Parameter1@"
+  
+  Default error action is stop, and the error code is returned to Rundeck.
+  You may return custom error codes with the Exit command and an error code.
+  Example: Exit 13
+.NOTES
+  Version:  2.5
+  Author:   Espen Blikstad
+  Purpose/change:
+  26.03.2017 EXTEBL: Changed description of @ character.
+  18.08.2017 EXTEBL: Added support for PowerShell expressions in script conditions.
+  10.11.2017 EXTEBL: Fixed detection of WMI query.
+#>
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(512,50)
+
+# Check script conditions, PowerShell expressions & WMI queries
+$conditions = {@option.Condition@}
+"$conditions".Split(";") | ?{$_.Trim() -ne  ""} | %{
+   if($_ -like "select *"){
+      if(-not(gwmi -query $_)) {exit}
+   }
+   else{
+      if(-not(invoke-command -ScriptBlock ([Scriptblock]::Create($_)))) {exit}
+   }
+}
+
+$path = "@option.Path@"
+
+$lastbootuptime = (Get-CimInstance Win32_operatingSystem).lastbootuptime
+If(!(Test-Path $path -PathType Container)){Throw "Invalid folder path."}
+if(!(split-path (split-path $path))){Throw "Path must be 2 levels or deeper."}
+If($path -like "\\*"){Throw "Only local paths are supported."}
+
+$folders = dir $path -directory -recurse -force -ea 0 | ?{ $_.CreationTime -lt $lastbootuptime -and $_.LastWriteTime -lt $lastbootuptime}
+dir $path -file -recurse -force -ea 0 | ?{ $_.CreationTime -lt $lastbootuptime -and $_.LastWriteTime -lt $lastbootuptime} | rm -ea 0
+$folders | Sort FullName -Descending | ?{($_ | dir -Force | measure).Count -eq 0} | rm -ea 0
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -nologo -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <timeout>24h</timeout>
+    <uuid>da8db682-49db-4917-8905-270bb70fc268</uuid>
+  </job>
+</joblist>
