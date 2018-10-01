@@ -14,6 +14,9 @@
         <option name='Version'>
           <description>Specifies the exact version of the module to install.</description>
         </option>
+        <option name='SkipPublisherCheck' required='true' value='false'>
+          <description>Skip checking the module digital signature.</description>
+        </option>
       </options>
     </context>
     <description>Installs or updates a PowerShell module from the specified repository.</description>
@@ -62,7 +65,8 @@ Param(
     $Condition = ([string]{r@option.Condition@}).Remove(0,1),
     $Name = ([string]{r@option.Name@}).Remove(0,1),
     $Repository = ([string]{r@option.Repository@}).Remove(0,1),
-    $Version = ([string]{r@option.Version@}).Remove(0,1)
+    $Version = ([string]{r@option.Version@}).Remove(0,1),
+    $SkipPublisherCheck = ([string]{r@option.SkipPublisherCheck@}).Remove(0,1)
 )
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
@@ -81,6 +85,10 @@ $Condition.Split(";") | ?{$_.Trim() -ne  ""} | %{
 $params = @{}
 if($Version){
     $params.RequiredVersion = $Version
+}
+
+if($SkipPublisherCheck -like "true"){
+    $params.SkipPublisherCheck = $true
 }
 
 # Check if module is already installed from repository.
