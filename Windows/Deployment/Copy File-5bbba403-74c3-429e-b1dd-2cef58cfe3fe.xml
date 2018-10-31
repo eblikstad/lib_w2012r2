@@ -7,8 +7,7 @@
         <option name='Path' required='true' />
       </options>
     </context>
-    <description><![CDATA[Copies an item from one location to another.
-[Confluence documentation](http://confluence.varner.no:8090/x/8gHBAw).]]></description>
+    <description>Copies an item from one location to another.</description>
     <dispatch>
       <excludePrecedence>true</excludePrecedence>
       <keepgoing>true</keepgoing>
