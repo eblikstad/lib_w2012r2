@@ -1,0 +1,123 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option name='Drivers' required='true'>
+          <description>Path containing directories with drivers.</description>
+        </option>
+        <option name='Image' required='true'>
+          <description>Path to the Windows image (WIM file).</description>
+        </option>
+        <option name='ImageIndex' required='true'>
+          <description>Index number of the Windows image.</description>
+        </option>
+        <option name='Temp' required='true' value='D:\Image\Temp' />
+      </options>
+    </context>
+    <description>Adds drivers to an offline Windows image. Driver inf files in subdirectories are added if not already present in the image.</description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>1</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>Assessment and Deployment Kit</group>
+    <id>948f6613-6095-4b9b-9d06-4b22f8d4d2df</id>
+    <loglevel>INFO</loglevel>
+    <multipleExecutions>true</multipleExecutions>
+    <name>Add Drivers</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>true</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PowerShell Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[#requires -version 2
+<#
+.SYNOPSIS
+  Adds drivers to an offline Windows image. Driver inf files in subdirectories are added if not already present in the image.
+.DESCRIPTION
+  Manages a Windows image (WIM file) using cmdlets from the Windows ADK.
+  The Windows image is mounted, drivers in the image are checked, drivers not present are added and the image is updated.
+  If no drivers are added, the image changes are discarded. The script does not upgrade drivers.
+.PARAMETER @option.Drivers@
+    Path containing directories with drivers.
+.PARAMETER @option.Image@
+    Path to the Windows image (WIM file).
+.PARAMETER @option.ImageIndex@
+    Index number of the Windows image.
+.INPUTS
+  None
+.OUTPUTS
+  None
+.NOTES
+  Version:        1.0
+  Author:         Espen Blikstad
+  Creation Date:  07.05.2016
+  Purpose/Change: Initial script development
+#>
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(512,50)
+
+# Store Rundeck options in PowerShell variables
+$option_Drivers = "@option.Drivers@"
+$option_Image = "@option.Image@"
+$option_ImageIndex = @option.ImageIndex@
+$option_Temp = "@option.Temp@"
+$job_ExecId = @job.execid@
+
+# Get the image details
+$image = Get-WindowsImage -ImagePath $option_Image -Index @option.ImageIndex@
+Write-Output "Mounting the image ""$($image.ImageName)"" (""$option_Image"", index $option_ImageIndex)."
+
+# Create the image mount directory
+$path = "$option_Temp\$job_ExecId.wim"
+if(-Not(Test-Path $path)){New-Item -Path $path -Type directory | Out-Null}
+
+# Mount the image
+Mount-WindowsImage –ImagePath $option_Image –Index $option_ImageIndex –Path $path | Out-Null
+$modified = $false
+
+# Get a list of inf files (drivers) already added to the image
+$inf = Get-WindowsDriver -Path $path | %{Split-Path -Path $_.OriginalFileName -Leaf}
+
+# Iterate the driver directories
+gci $option_Drivers | %{
+
+   # Iterative the the inf files
+   gci "$($_.FullName)\*.inf" | % {
+      if(-Not($inf -Match $_.Name)){
+         # Add the driver inf the the image
+         $driver = Add-WindowsDriver -Path $path -Driver $_.FullName
+         $modified = $true
+         # List the driver devices added
+         $driver | %{Get-WindowsDriver -Path $path -Driver $_.Driver} | Get-Unique | %{Write-Output "Added the driver ""$($_.HardwareDescription)"" to the image path ""$path""."}
+      } else {
+         #Write-Output "WARNING: The driver ""$($_.FullName)"" is already added to the image."
+      }
+   } 
+}
+
+if($modified -eq $true) {
+   Write-Output "Dismounting the image ""$option_Image"" and saving changes."
+   Dismount-WindowsImage -Path $path -Save | Out-Null
+} else {
+   Write-Output "WARNING: No changes made to the image."
+   Write-Output "Dismounting the image ""$option_Image"" and discarding changes."
+   Dismount-WindowsImage -Path $path -Discard | Out-Null
+}
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <uuid>948f6613-6095-4b9b-9d06-4b22f8d4d2df</uuid>
+  </job>
+</joblist>
