@@ -17,7 +17,7 @@
     <scheduleEnabled>true</scheduleEnabled>
     <sequence keepgoing='false' strategy='node-first'>
       <command>
-        <jobref group='System' name='Stop Service' nodeStep='true'>
+        <jobref group='System' name='Stop Service' nodeStep='true' project='lib_w2012r2'>
           <arg line='-Name wuauserv -Timeout 3600' />
           <nodefilters>
             <filter>${node.name}</filter>
