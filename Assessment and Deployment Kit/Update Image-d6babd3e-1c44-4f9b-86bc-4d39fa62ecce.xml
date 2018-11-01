@@ -1,0 +1,164 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option name='Baseline' required='true' />
+        <option name='Image' required='true' value='d:\image\w2012r2-test\sources\install.wim' />
+        <option name='ImageIndex' required='true' value='2' />
+        <option name='WSUS' required='true' value='server' />
+        <option name='ScratchDir' required='true' value='D:\Image\Scratch' />
+        <option name='Temp' required='true' value='D:\Image\Temp' />
+      </options>
+    </context>
+    <description></description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>Assessment and Deployment Kit</group>
+    <id>d6babd3e-1c44-4f9b-86bc-4d39fa62ecce</id>
+    <loglevel>INFO</loglevel>
+    <name>Update Image</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>true</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PowerShell Inline Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[#requires -version 2
+<#
+.SYNOPSIS
+  Returns the PowerShell engine version using the VMS log format
+.DESCRIPTION
+  The $PSVersionTable built-in variable is the most reliable method of determining the PowerShell version.
+  Uses the Write-VLog function to return the PowerShell version in the VMS log format.
+  The PowerShell major version is returned in the Data column and a comment in the Message column.
+.PARAMETER <Parameter_Name>
+    <Brief description of parameter input required. Repeat this attribute if required>
+.INPUTS
+  None
+.OUTPUTS
+  <Outputs if any, otherwise state None - example: Log file stored in C:\Windows\Temp\<name>.log>
+.NOTES
+  Version:        1.0
+  Author:         Espen Blikstad
+  Creation Date:  05.02.2016
+  Purpose/Change: Initial script development
+#>
+$ErrorActionPreference = "Stop"
+
+# Store Rundeck options in PowerShell variables
+$option_Baseline = "@option.Baseline@"
+$option_Image = "@option.Image@"
+$option_ImageIndex = @option.ImageIndex@
+$option_Packages = "@option.Packages@"
+$option_WSUS = "@option.WSUS@"
+$option_Temp = "@option.Temp@"
+$option_ScratchDir = "@option.ScratchDir@"
+$job_ExecId = @job.execid@
+
+If([int](Get-Item WSMan:\localhost\Shell\MaxMemoryPerShellMB).Value -lt 4096){
+    Throw "WSMan maximum memory per shell is below 4096 MB."
+}
+
+[void][reflection.assembly]::LoadWithPartialName("Microsoft.UpdateServices.Administration")
+# Create an update scope that includes updates that are installed.
+$UpdateScope = New-Object Microsoft.UpdateServices.Administration.UpdateScope
+$UpdateScope.IncludedInstallationStates = [Microsoft.UpdateServices.Administration.UpdateInstallationStates]::Installed -bor [Microsoft.UpdateServices.Administration.UpdateInstallationStates]::Downloaded
+$updatescope.ApprovedStates = [Microsoft.UpdateServices.Administration.ApprovedStates]::Any
+$updateScope.UpdateApprovalActions =[Microsoft.UpdateServices.Administration.UpdateApprovalActions]::Install
+$server = Get-WsusServer -Name $option_WSUS -PortNumber 8530
+
+
+Write-Host "Getting installed updates from WSUS for $option_Baseline."
+try{
+   $computer = $server.GetComputerTargetByName($option_Baseline)
+   $updateInfo = $computer.GetUpdateInstallationInfoPerUpdate($UpdateScope)
+   $updates = ($updateInfo | Where-Object{$_.UpdateApprovalAction -eq [Microsoft.UpdateServices.Administration.UpdateApprovalAction]::Install}).GetUpdate()
+}
+catch{
+    Write-Output "Baseline computer node found."
+    Exit
+}
+
+
+If($measure.count -eq 0){Exit }
+
+$files = $updates.GetInstallableItems() | Select -Expand Files | ? Type -eq "SelfContained" | sort Name -Unique
+
+$measure = $files | measure
+Write-Output "Found $($measure.count) installed updates."
+
+# Create the download directory
+$updatepath = "$($env:temp)\$job_ExecId-updates"
+if(-Not(Test-Path $updatepath)){New-Item -Path $updatepath -Type directory | Out-Null}
+
+#Write-Host "Download the updates from the WSUS server."
+#md d:\wim\packages
+#md d:\wim\w61sp1
+# Do not try to download null entries in the filelist
+$wc = New-Object System.Net.WebClient
+#$files | %{$wc.DownloadFile($_.FileUri, $updatepath + "\$($_.Name)"); Write-Output "Downloading $($_.Name)"}
+$files | % {$wc.DownloadFile($_.FileUri, $updatepath + "\" + $_.Name); Write-Output $_.Name}
+
+
+# Get the image details
+$image = Get-WindowsImage -ImagePath $option_Image -Index @option.ImageIndex@
+Write-Output "Mounting the image ""$($image.ImageName)"" (""$option_Image"", index $option_ImageIndex)."
+
+# Create the image mount directory
+$path = "$option_Temp\$job_ExecId.wim"
+if(-Not(Test-Path $path)){New-Item -Path $path -Type directory | Out-Null}
+
+## Create the scratch directory
+#$scratchdir = "$option_ScratchDir\$job_ExecId"
+#if(-Not(Test-Path $scratchdir)){New-Item -Path $scratchdir -Type directory | Out-Null}
+
+# Mount the image
+Mount-WindowsImage –ImagePath $option_Image –Index $option_ImageIndex –Path $path | Out-Null
+
+$ErrorActionPreference = "Continue"
+
+#Try{
+#Add-WindowsPackage -PackagePath $updatepath -Path $path -ScratchDir $scratchdir
+gci $updatepath | %{
+    try {
+       Add-WindowsPackage -PackagePath $_.FullName -Path $path -ScratchDir $scratchdir | Out-Null
+       Write-Output $_.Name
+       }
+    catch { Write-Warning "Failed to add package." }
+}
+#gci d:\wim\packages | %{dism /quiet /image:"d:\wim\w61sp1" /add-package /packagepath:$($_.FullName); Write-VLog "Adding package $($_.name)"}
+#rd d:\wim\packages -recurse
+#}
+#Catch{
+#    Write-Output "Dismounting the image ""$option_Image"" and discarding changes."
+#    Dismount-WindowsImage -Path $path -Discard | Out-Null
+#    rd $path -Recurse
+#    Throw $_.Exception
+#}
+#Finally{
+    rd $updatepath -Recurse
+#}
+
+
+
+Write-Output "Dismounting the image ""$option_Image"" and saving changes."
+Dismount-WindowsImage -Path $path -Save | Out-Null
+rd $path -Recurse
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <uuid>d6babd3e-1c44-4f9b-86bc-4d39fa62ecce</uuid>
+  </job>
+</joblist>
