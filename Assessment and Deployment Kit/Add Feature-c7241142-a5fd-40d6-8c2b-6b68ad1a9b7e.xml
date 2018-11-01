@@ -1,0 +1,108 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=',' multivalued='true' name='Feature' required='true' value='TelnetClient,SNMP,NetFx3,NetFx4' values='NetFx3,NetFx4,SNMP,TelnetClient' />
+        <option name='Image' required='true' value='D:\os\win2016tp5-corevm\sources\install.wim'>
+          <description>Path to the Windows image (WIM file).</description>
+        </option>
+        <option name='ImageIndex' required='true' value='1'>
+          <description>Index number of the Windows image.</description>
+        </option>
+        <option name='Source' value='D:\os\win2016tp5-corevm\sources\sxs' />
+        <option name='Temp' required='true' value='D:\Image\Temp' />
+      </options>
+    </context>
+    <description>Adds features to an offline Windows image.</description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>1</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>Assessment and Deployment Kit</group>
+    <id>c7241142-a5fd-40d6-8c2b-6b68ad1a9b7e</id>
+    <loglevel>INFO</loglevel>
+    <multipleExecutions>true</multipleExecutions>
+    <name>Add Feature</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>true</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PowerShell Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[#requires -version 2
+<#
+.SYNOPSIS
+  Adds drivers to an offline Windows image. Driver inf files in subdirectories are added if not already present in the image.
+.DESCRIPTION
+  Manages a Windows image (WIM file) using cmdlets from the Windows ADK.
+  The Windows image is mounted, drivers in the image are checked, drivers not present are added and the image is updated.
+  If no drivers are added, the image changes are discarded. The script does not upgrade drivers.
+.PARAMETER @option.Drivers@
+    Path containing directories with drivers.
+.PARAMETER @option.Image@
+    Path to the Windows image (WIM file).
+.PARAMETER @option.ImageIndex@
+    Index number of the Windows image.
+.INPUTS
+  None
+.OUTPUTS
+  None
+.NOTES
+  Version:        1.0
+  Author:         Espen Blikstad
+  Creation Date:  07.05.2016
+  Purpose/Change: Initial script development
+#>
+$ErrorActionPreference = "Stop"
+
+# Store Rundeck options in PowerShell variables
+$option_Source = "@option.Source@"
+$option_Feature = "@option.Feature@"
+$option_Image = "@option.Image@"
+$option_ImageIndex = @option.ImageIndex@
+$option_Temp = "@option.Temp@"
+$job_ExecId = @job.execid@
+
+# Get the image details
+$image = Get-WindowsImage -ImagePath $option_Image -Index @option.ImageIndex@
+Write-Output "Mounting the image ""$($image.ImageName)"" (""$option_Image"", index $option_ImageIndex)."
+
+# Create the image mount directory
+$path = "$option_Temp\$job_ExecId.wim"
+if(-Not(Test-Path $path)){New-Item -Path $path -Type directory | Out-Null}
+
+# Mount the image
+Mount-WindowsImage –ImagePath $option_Image –Index $option_ImageIndex –Path $path | Out-Null
+
+
+$feature = $option_Feature.Split(",")
+$feature | %{
+    Try {
+        Write-Output "Enabling the Windows feature $($_)."
+        Enable-WindowsOptionalFeature -Feature $_ -Path $path -All -Source $option_Source | Out-Null
+    }
+    Catch {
+        
+    }
+   
+}
+
+
+Write-Output "Dismounting the image ""$option_Image"" and saving changes."
+Dismount-WindowsImage -Path $path -Save | Out-Null
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <uuid>c7241142-a5fd-40d6-8c2b-6b68ad1a9b7e</uuid>
+  </job>
+</joblist>
