@@ -1,0 +1,120 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option name='ADK' required='true' value='C:\Program Files (x86)\Windows Kits\10\Assessment and Deployment Kit'>
+          <description>Path to the installed Windows ADK.</description>
+        </option>
+        <option name='BootFile.EFI'>
+          <description>Relative path to the EFI boot file.</description>
+        </option>
+        <option name='BootFile.x86'>
+          <description>Relative path to the x86 boot file.</description>
+        </option>
+        <option name='ISO' required='true'>
+          <description>Path to the output ISO file.</description>
+        </option>
+        <option name='Label'>
+          <description>ISO file volume label.</description>
+        </option>
+        <option name='Source' required='true'>
+          <description>Source directory for ISO file.</description>
+        </option>
+      </options>
+    </context>
+    <description>Creates a bootable ISO file.</description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>1</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>Assessment and Deployment Kit</group>
+    <id>79a685cb-349e-42a1-9b39-adb4c9d578a3</id>
+    <loglevel>INFO</loglevel>
+    <multipleExecutions>true</multipleExecutions>
+    <name>New ISO</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>true</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PowerShell Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[#requires -version 2
+<#
+.SYNOPSIS
+  Returns the PowerShell engine version using the VMS log format
+.DESCRIPTION
+  The $PSVersionTable built-in variable is the most reliable method of determining the PowerShell version.
+  Uses the Write-VLog function to return the PowerShell version in the VMS log format.
+  The PowerShell major version is returned in the Data column and a comment in the Message column.
+.PARAMETER <Parameter_Name>
+    <Brief description of parameter input required. Repeat this attribute if required>
+.INPUTS
+  None
+.OUTPUTS
+  <Outputs if any, otherwise state None - example: Log file stored in C:\Windows\Temp\<name>.log>
+.NOTES
+  Version:        1.0
+  Author:         Espen Blikstad
+  Creation Date:  05.02.2016
+  Purpose/Change: Initial script development
+#>
+$ErrorActionPreference = "Stop"
+
+# Check WMI queries for script condition
+"@option.Condition@".Split(";") | ?{$_.Trim() -ne  ""} | %{ if(-not(gwmi -query $_)) {exit}}
+
+$option_ADK = "@option.ADK@"
+$option_BootFile_x86 = "@option.BootFile.x86@"
+$option_BootFile_EFI = "@option.BootFile.EFI@"
+$option_ISO = "@option.ISO@"
+$option_Label = "@option.Label@"
+$option_Source = "@option.Source@"
+
+If($option_BootFile_x86 -and $option_BootFile_EFI) {
+    Write-Output "x86 & EFI boot enabled ISO. x86 boot file ""$option_BootFile_x86"" & EFI boot file ""$option_BootFile_EFI""."
+    $boot = "-bootdata:2#p0,e,b""$option_Source\$option_BootFile_x86""#pEF,e,b""$option_Source\$option_BootFile_EFI"""
+}
+ElseIf($option_BootFile_x86) {
+    Write-Output "x86 boot enabled ISO. x86 boot file ""$option_BootFile_x86""."
+    $boot = "-bootdata:1#p0,e,b""$option_Source\$option_BootFile_x86"""
+}
+ElseIf($option_BootFile_EFI) {
+    Write-Output "EFI boot enabled ISO. EFI boot file ""$option_BootFile_EFI""."
+    $boot = "-bootdata:1#pEF,e,b""$option_Source\$option_BootFile_EFI"""
+}
+Else {
+    # No boot records
+    $boot = ""
+}
+
+# Create the ISO file in UDF 1.02 format.
+Write-Output "Creating the ISO file ""$option_ISO"" from the directory ""$option_Source""."
+# Redirect stderr, we don't want progress
+$ErrorActionPreference = "Ignore"
+$output = & "$option_ADK\Deployment Tools\amd64\Oscdimg\oscdimg.exe" -m -o -u2 -udfver102 $boot "$option_Source" "$option_ISO" 2>&1  | %{"$_"}
+
+If($LastExitCode -ne 0){
+    $ErrorActionPreference = "Stop"
+    If(Test-Path $option_ISO){ri $option_ISO}
+    Throw $output
+}
+Else {
+    $sizegb = [Math]::Round($(gi $option_ISO).Length/1gb, 1)
+    Write-Output "ISO file created, size $sizegb GB."
+}
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <uuid>79a685cb-349e-42a1-9b39-adb4c9d578a3</uuid>
+  </job>
+</joblist>
