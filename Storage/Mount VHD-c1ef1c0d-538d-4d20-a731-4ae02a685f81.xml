@@ -1,0 +1,133 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/json/wmi.json'>
+          <description>WMI conditions for the script.</description>
+        </option>
+        <option delimiter=';' multivalued='true' name='SuccessCode' value='-2147024809' />
+        <option name='Path' required='true'>
+          <description>Specifies the path to the virtual hard disk file for the virtual hard disk to be mounted.</description>
+        </option>
+      </options>
+    </context>
+    <description>Mounts a VHD file.</description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>Storage</group>
+    <id>c1ef1c0d-538d-4d20-a731-4ae02a685f81</id>
+    <loglevel>INFO</loglevel>
+    <name>Mount VHD</name>
+    <nodeFilterEditable>false</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>false</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PS Script</description>
+        <fileExtension>ps1</fileExtension>
+        <plugins>
+          <LogFilter type='key-value-data'>
+            <config>
+              <logData>false</logData>
+              <regex>^RUNDECK:DATA:(.+?)\s*=\s*(.+)$</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='quiet-output'>
+            <config>
+              <loglevel>verbose</loglevel>
+              <matchLoglevel>normal</matchLoglevel>
+              <quietMatch>true</quietMatch>
+              <regex>RUNDECK:DATA:.*</regex>
+            </config>
+          </LogFilter>
+        </plugins>
+        <script><![CDATA[# Copyright 2018 Espen Blikstad.
+# Licensed under the Apache License, Version 2.0.
+
+#requires -version 4
+<#
+.SYNOPSIS
+  Rundeck inline PowerShell script.
+.DESCRIPTION
+  Inline scripts are used for simple procedures, typical 25-100 lines in length.
+  Job options needs to be added to the PowerShell param block, ie. @option.Parameter1@. Warning, tokens are case sensitive.
+  The @ character must be escaped using \@.
+
+  Default error action is stop, and the error code is returned to Rundeck.
+.NOTES
+  Version:  3.0
+  Author:   Espen Blikstad
+  Purpose/change:
+  2018.08.03 EXTEBL: Version 3.0.
+#>
+Param(
+    # Add all tokens to the parameter block
+    [string[]]$Condition = @'
+@option.Condition@
+'@,
+    [string[]]$SuccessCode = @'
+@option.SuccessCode@
+'@,
+    [string[]]$Path = @'
+@option.Path@
+'@
+)
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(150,50)
+
+if($Condition){$Condition = $Condition.Split(";")}
+if($SuccessCode){$SuccessCode = $SuccessCode.Split(",")}
+
+# Check script conditions, PowerShell expressions & WMI queries
+$Condition | ?{$_.Trim() -ne  ""} | %{
+   if($_ -like "select *"){
+      if(-not(gwmi -query $_)) {exit}
+   }
+   else{
+      if(-not(invoke-command -ScriptBlock ([Scriptblock]::Create($_)))) {exit}
+   }
+}
+
+
+$diskpart = @"
+select vdisk file="$Path"
+attach vdisk
+"@
+
+$script = New-TemporaryFile
+$diskpart | Out-File -Encoding ascii -FilePath $script.FullName
+
+Write-Output "Attaching VHD file ""$path""."
+diskpart.exe /s "$($script.FullName)" | Out-Null
+
+# Diskpart requires a 15 second pause
+Start-Sleep 15
+
+$script.Delete()
+
+
+# If we have a non-zero return code only return it if not defined as success code.
+Write-Output "RUNDECK:DATA:ExitCode=$lastexitcode"
+if($lastexitcode -ne 0 -and $SuccessCode -contains $lastexitcode){Exit}
+
+# $lastexitcode contains the exit code of the last Windows-based program that was run.
+[Environment]::Exit($lastexitcode)
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -nologo -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <timeout>1h</timeout>
+    <uuid>c1ef1c0d-538d-4d20-a731-4ae02a685f81</uuid>
+  </job>
+</joblist>
