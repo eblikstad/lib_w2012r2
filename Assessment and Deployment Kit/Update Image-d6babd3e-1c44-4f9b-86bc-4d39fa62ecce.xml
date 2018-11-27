@@ -6,8 +6,6 @@
         <option name='Image' required='true' value='d:\image\w2012r2-test\sources\install.wim' />
         <option name='ImageIndex' required='true' value='2' />
         <option name='WSUS' required='true' value='server' />
-        <option name='ScratchDir' required='true' value='D:\Image\Scratch' />
-        <option name='Temp' required='true' value='D:\Image\Temp' />
       </options>
     </context>
     <description></description>
@@ -60,9 +58,9 @@ $option_Baseline = "@option.Baseline@"
 $option_Image = "@option.Image@"
 $option_ImageIndex = @option.ImageIndex@
 $option_Packages = "@option.Packages@"
-$option_WSUS = "@option.WSUS@"
-$option_Temp = "@option.Temp@"
-$option_ScratchDir = "@option.ScratchDir@"
+$option_WSUS_URL = [System.Uri]"@option.WSUS.URL@"
+#$option_Temp = "@option.Temp@"
+#$option_ScratchDir = "@option.ScratchDir@"
 $job_ExecId = @job.execid@
 
 If([int](Get-Item WSMan:\localhost\Shell\MaxMemoryPerShellMB).Value -lt 4096){
@@ -75,7 +73,14 @@ $UpdateScope = New-Object Microsoft.UpdateServices.Administration.UpdateScope
 $UpdateScope.IncludedInstallationStates = [Microsoft.UpdateServices.Administration.UpdateInstallationStates]::Installed -bor [Microsoft.UpdateServices.Administration.UpdateInstallationStates]::Downloaded
 $updatescope.ApprovedStates = [Microsoft.UpdateServices.Administration.ApprovedStates]::Any
 $updateScope.UpdateApprovalActions =[Microsoft.UpdateServices.Administration.UpdateApprovalActions]::Install
-$server = Get-WsusServer -Name $option_WSUS -PortNumber 8530
+
+$parms = @{}
+$parms.Name = $option_WSUS_URL.Host
+$parms.PortNumber = $option_WSUS_URL.Port
+if($option_WSUS_URL.Scheme -like "https"){
+    $option_WSUS_URL.UseSSL = $true
+}
+$server = Get-WsusServer @parms
 
 
 Write-Host "Getting installed updates from WSUS for $option_Baseline."
@@ -90,11 +95,12 @@ catch{
 }
 
 
-If($measure.count -eq 0){Exit }
 
 $files = $updates.GetInstallableItems() | Select -Expand Files | ? Type -eq "SelfContained" | sort Name -Unique
 
 $measure = $files | measure
+If($measure.count -eq 0){Exit }
+
 Write-Output "Found $($measure.count) installed updates."
 
 # Create the download directory
@@ -115,7 +121,9 @@ $image = Get-WindowsImage -ImagePath $option_Image -Index @option.ImageIndex@
 Write-Output "Mounting the image ""$($image.ImageName)"" (""$option_Image"", index $option_ImageIndex)."
 
 # Create the image mount directory
-$path = "$option_Temp\$job_ExecId.wim"
+#$path = "$option_Temp\$job_ExecId.wim"
+$path = [System.IO.Path]::GetTempFileName()
+del $path
 if(-Not(Test-Path $path)){New-Item -Path $path -Type directory | Out-Null}
 
 ## Create the scratch directory
@@ -131,7 +139,7 @@ $ErrorActionPreference = "Continue"
 #Add-WindowsPackage -PackagePath $updatepath -Path $path -ScratchDir $scratchdir
 gci $updatepath | %{
     try {
-       Add-WindowsPackage -PackagePath $_.FullName -Path $path -ScratchDir $scratchdir | Out-Null
+       Add-WindowsPackage -PackagePath $_.FullName -Path $path | Out-Null
        Write-Output $_.Name
        }
     catch { Write-Warning "Failed to add package." }
