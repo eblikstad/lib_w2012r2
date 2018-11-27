@@ -1,0 +1,92 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/json/wmi.json'>
+          <description>WMI conditions for the script.</description>
+        </option>
+        <option name='Description' required='true' />
+      </options>
+    </context>
+    <description><![CDATA[The first line is the short description, keep below 80 characters (guideline).
+The following lines are the detailed descriptions of the job. There is no need to describe options here, they have their own description.
+You may use markdown on these lines [Markdown Wiki](https://en.wikipedia.org/wiki/Markdown).]]></description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>System</group>
+    <id>e6000106-fda5-480e-8d28-82d1637affe9</id>
+    <loglevel>INFO</loglevel>
+    <name>Set Description</name>
+    <nodeFilterEditable>false</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>false</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PS Script</description>
+        <fileExtension>ps1</fileExtension>
+        <plugins />
+        <script><![CDATA[# Copyright 2018 Espen Blikstad.
+# Licensed under the Apache License, Version 2.0.
+
+#requires -version 4
+<#
+.SYNOPSIS
+  Rundeck inline PowerShell script.
+.DESCRIPTION
+  Inline scripts are used for simple procedures, typical 25-100 lines in length.
+  Job options needs to be added to the PowerShell param block, ie. @option.Parameter1@. Warning, tokens are case sensitive.
+  The @ character must be escaped using \@.
+
+  Default error action is stop, and the error code is returned to Rundeck.
+.NOTES
+  Version:  3.0
+  Author:   Espen Blikstad
+  Purpose/change:
+  2018.08.03 EXTEBL: Version 3.0.
+#>
+Param(
+    # Add all tokens to the parameter block
+    [string[]]$Condition = @'
+@option.Condition@
+'@,
+    [string[]]$Description = @'
+@option.Description@
+'@
+)
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(150,50)
+#Set-StrictMode -Version 2.0
+
+# Check script conditions, PowerShell expressions & WMI queries
+if($Condition){$Condition = $Condition.Split(";")}
+$Condition | ?{$_.Trim() -ne  ""} | %{
+   if($_ -like "select *"){
+      if(-not(gwmi -query $_)) {exit}
+   }
+   else{
+      if(-not(invoke-command -ScriptBlock ([Scriptblock]::Create($_)))) {exit}
+   }
+}
+
+$path = "HKLM:\SYSTEM\CurrentControlSet\Services\LanmanServer\Parameters"
+New-ItemProperty -Path $path -Name "srvcomment" -Value $Description -PropertyType String -Force | Out-Null
+Write-Output "Set the computer description"
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -nologo -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <timeout>1h</timeout>
+    <uuid>e6000106-fda5-480e-8d28-82d1637affe9</uuid>
+  </job>
+</joblist>
