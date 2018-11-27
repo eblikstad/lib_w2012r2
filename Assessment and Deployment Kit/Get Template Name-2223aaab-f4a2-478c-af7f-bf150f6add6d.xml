@@ -1,0 +1,128 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/json/wmi.json'>
+          <description>WMI conditions for the script.</description>
+        </option>
+        <option name='Name' required='true'>
+          <description>Specifies the template name.</description>
+        </option>
+        <option name='Version' required='true'>
+          <description>Specifies the template version.</description>
+        </option>
+      </options>
+    </context>
+    <description>Get the 15 character Windows computer name from the template name and version.</description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>true</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>Assessment and Deployment Kit</group>
+    <id>2223aaab-f4a2-478c-af7f-bf150f6add6d</id>
+    <loglevel>INFO</loglevel>
+    <name>Get Template Name</name>
+    <nodeFilterEditable>false</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>false</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PS Script</description>
+        <fileExtension>ps1</fileExtension>
+        <plugins>
+          <LogFilter type='key-value-data'>
+            <config>
+              <logData>false</logData>
+              <regex>^RUNDECK:DATA:(.+?)\s*=\s*(.+)$</regex>
+            </config>
+          </LogFilter>
+          <LogFilter type='quiet-output'>
+            <config>
+              <loglevel>verbose</loglevel>
+              <matchLoglevel>normal</matchLoglevel>
+              <quietMatch>true</quietMatch>
+              <regex>RUNDECK:DATA:.*</regex>
+            </config>
+          </LogFilter>
+        </plugins>
+        <script><![CDATA[# Copyright 2018 Espen Blikstad.
+# Licensed under the Apache License, Version 2.0.
+
+#requires -version 4
+<#
+.SYNOPSIS
+  Rundeck inline PowerShell script.
+.DESCRIPTION
+  Inline scripts are used for simple procedures, typical 25-100 lines in length.
+  Job options needs to be added to the PowerShell param block, ie. @option.Parameter1@. Warning, tokens are case sensitive.
+  The @ character must be escaped using \@.
+
+  Default error action is stop, and the error code is returned to Rundeck.
+.NOTES
+  Version:  3.0
+  Author:   Espen Blikstad
+  Purpose/change:
+  2018.08.03 EXTEBL: Version 3.0.
+#>
+Param(
+    # Add all tokens to the parameter block
+    [string[]]$Condition = @'
+@option.Condition@
+'@,
+    [string[]]$Name = @'
+@option.Name@
+'@,
+    [string[]]$Version = @'
+@option.Version@
+'@
+)
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(150,50)
+
+if($Condition){$Condition = $Condition.Split(";")}
+Write-Output "RUNDECK:DATA:WindowsName="
+
+# Check script conditions, PowerShell expressions & WMI queries
+$Condition | ?{$_.Trim() -ne  ""} | %{
+   if($_ -like "select *"){
+      if(-not(gwmi -query $_)) {exit}
+   }
+   else{
+      if(-not(invoke-command -ScriptBlock ([Scriptblock]::Create($_)))) {exit}
+   }
+}
+
+$data = "$Name-$Version"
+$md5 = new-object -TypeName System.Security.Cryptography.MD5CryptoServiceProvider
+$utf8 = new-object -TypeName System.Text.UTF8Encoding
+$hash = [System.BitConverter]::ToString($md5.ComputeHash($utf8.GetBytes($data)))
+$windowsName = "w-" + $hash.Replace("-","").SubString(0,13).ToLower()
+
+Write-Output "Debug: $windowsName"
+Write-Output "RUNDECK:DATA:WindowsName=$windowsName"
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -nologo -command</scriptinterpreter>
+      </command>
+      <command>
+        <step-plugin type='export-var'>
+          <configuration>
+            <entry key='export' value='WindowsName' />
+            <entry key='group' value='export' />
+            <entry key='value' value='${data.WindowsName*}' />
+          </configuration>
+        </step-plugin>
+      </command>
+    </sequence>
+    <timeout>1h</timeout>
+    <uuid>2223aaab-f4a2-478c-af7f-bf150f6add6d</uuid>
+  </job>
+</joblist>

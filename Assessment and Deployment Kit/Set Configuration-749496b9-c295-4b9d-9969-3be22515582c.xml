@@ -1,0 +1,86 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option name='Path' required='true' />
+        <option name='Name' required='true' />
+        <option name='Password' required='true' secure='true' valueExposed='true' />
+        <option name='Version' required='true' />
+      </options>
+    </context>
+    <description>Updates the autounattend.xml file.</description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>1</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>Assessment and Deployment Kit</group>
+    <id>749496b9-c295-4b9d-9969-3be22515582c</id>
+    <loglevel>INFO</loglevel>
+    <multipleExecutions>true</multipleExecutions>
+    <name>Set Configuration</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>true</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PowerShell Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[#requires -version 2
+<#
+.SYNOPSIS
+  Adds drivers to an offline Windows image. Driver inf files in subdirectories are added if not already present in the image.
+.DESCRIPTION
+  Manages a Windows image (WIM file) using cmdlets from the Windows ADK.
+  The Windows image is mounted, drivers in the image are checked, drivers not present are added and the image is updated.
+  If no drivers are added, the image changes are discarded. The script does not upgrade drivers.
+.PARAMETER @option.Drivers@
+    Path containing directories with drivers.
+.PARAMETER @option.Image@
+    Path to the Windows image (WIM file).
+.PARAMETER @option.ImageIndex@
+    Index number of the Windows image.
+.INPUTS
+  None
+.OUTPUTS
+  None
+.NOTES
+  Version:        1.0
+  Author:         Espen Blikstad
+  Creation Date:  07.05.2016
+  Purpose/Change: Initial script development
+#>
+$ErrorActionPreference = "Stop"
+
+# Store Rundeck options in PowerShell variables
+$option_Path = "@option.Path@"
+$option_Password = "@option.Password@"
+$option_Name = "@option.Name@"
+$option_Version = "@option.Version@"
+
+$data = "$option_Name-$option_Version"
+$md5 = new-object -TypeName System.Security.Cryptography.MD5CryptoServiceProvider
+$utf8 = new-object -TypeName System.Text.UTF8Encoding
+$hash = [System.BitConverter]::ToString($md5.ComputeHash($utf8.GetBytes($data)))
+$name = "w-" + $hash.Replace("-","").SubString(0,13).ToLower()
+
+$xml = [xml](Get-Content -Path $option_Path)
+$base64 = [System.Convert]::ToBase64String([System.Text.Encoding]::Unicode.GetBytes($option_Password + "AdministratorPassword"))
+$xml.unattend.settings.component.UserAccounts.AdministratorPassword.Value = $base64
+$xml.unattend.settings.Where{($_.Pass -eq 'specialize')}.component.Where{($_.name -eq 'Microsoft-Windows-Shell-Setup')}.getElementsByTagName("ComputerName")."#text" = $name
+$xml.Save($option_Path)
+
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <uuid>749496b9-c295-4b9d-9969-3be22515582c</uuid>
+  </job>
+</joblist>

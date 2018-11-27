@@ -1,0 +1,102 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option name='Baseline' required='true' />
+        <option name='WSUS.URL' required='true' value='server' />
+      </options>
+    </context>
+    <description></description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>Windows Update</group>
+    <id>439763af-0811-4c4d-baa1-42e423c7f45e</id>
+    <loglevel>INFO</loglevel>
+    <name>Wait Report</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>true</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PowerShell Inline Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[#requires -version 2
+<#
+.SYNOPSIS
+  Returns the PowerShell engine version using the VMS log format
+.DESCRIPTION
+  The $PSVersionTable built-in variable is the most reliable method of determining the PowerShell version.
+  Uses the Write-VLog function to return the PowerShell version in the VMS log format.
+  The PowerShell major version is returned in the Data column and a comment in the Message column.
+.PARAMETER <Parameter_Name>
+    <Brief description of parameter input required. Repeat this attribute if required>
+.INPUTS
+  None
+.OUTPUTS
+  <Outputs if any, otherwise state None - example: Log file stored in C:\Windows\Temp\<name>.log>
+.NOTES
+  Version:        1.0
+  Author:         Espen Blikstad
+  Creation Date:  05.02.2016
+  Purpose/Change: Initial script development
+#>
+$ErrorActionPreference = "Stop"
+
+# Store Rundeck options in PowerShell variables
+$option_Baseline = "@option.Baseline@"
+$option_WSUS_URL = [System.Uri]"@option.WSUS.URL@"
+
+
+$parms = @{}
+$parms.Name = $option_WSUS_URL.Host
+$parms.PortNumber = $option_WSUS_URL.Port
+if($option_WSUS_URL.Scheme -like "https"){
+    $option_WSUS_URL.UseSSL = $true
+}
+$server = Get-WsusServer @parms
+
+$time1 = (get-wsuscomputer -UpdateServer $server -NameIncludes $option_Baseline).LastReportedStatusTime
+$time2 = $time1
+Write-Host "Debug: $time1"
+Write-Host "Waiting until WSUS server has recevied report."
+$timer = [system.diagnostics.stopwatch]::StartNew()
+$timeout = 3600
+
+
+
+$Session = New-Object -ComObject Microsoft.Update.Session            
+$Searcher = $Session.CreateUpdateSearcher()            
+$HistoryCount = $Searcher.GetTotalHistoryCount()
+If($Searcher.QueryHistory(0,$HistoryCount) | ? Operation -eq 1){
+   Write-Output "Detected installed Windows updates"
+
+	do{
+		if($Timeout -ne 0 -and $timer.Elapsed.TotalSeconds -gt $Timeout){
+			Write-Output "Warning: Timeout"
+			Exit
+		}
+
+		wuauclt.exe /reportnow
+		Start-Sleep 10
+		$time2 = (get-wsuscomputer -UpdateServer $server -NameIncludes $option_Baseline).LastReportedStatusTime
+
+	} while($time1 -eq $time2)
+   
+}
+]]></script>
+        <scriptargs />
+        <scriptinterpreter argsquoted='true'>powershell.exe -inputformat none -noninteractive -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <uuid>439763af-0811-4c4d-baa1-42e423c7f45e</uuid>
+  </job>
+</joblist>

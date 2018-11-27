@@ -1,0 +1,86 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option delimiter=';' multivalued='true' name='Condition' valuesUrl='file:/json/wmi.json'>
+          <description>WMI conditions for the script.</description>
+        </option>
+        <option name='Name' required='true' value='*'>
+          <description>Specifies the name of the network adapter.</description>
+        </option>
+      </options>
+    </context>
+    <description>Disables the NetBIOS on one or more network adapters.</description>
+    <executionEnabled>true</executionEnabled>
+    <group>Network</group>
+    <id>10906173-cafe-4997-b4da-383dbb027f3c</id>
+    <loglevel>INFO</loglevel>
+    <name>Disable Adapter NetBIOS</name>
+    <nodeFilterEditable>false</nodeFilterEditable>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PS Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[# Copyright 2018 Espen Blikstad.
+# Licensed under the Apache License, Version 2.0.
+
+#requires -version 4
+<#
+.SYNOPSIS
+  Rundeck inline PowerShell script.
+.DESCRIPTION
+  Inline scripts are used for simple procedures, typical 25-100 lines in length.
+  Job options needs to be added to the PowerShell param block, ie. @option.Parameter1@. Warning, tokens are case sensitive.
+  The @ character must be escaped using \@.
+
+  Default error action is stop, and the error code is returned to Rundeck.
+.NOTES
+  Version:  3.0
+  Author:   Espen Blikstad
+  Purpose/change:
+  2018.08.03 EXTEBL: Version 3.0.
+#>
+Param(
+    # Add all tokens to the parameter block
+    [string[]]$Condition = @'
+@option.Condition@
+'@,
+    [string[]]$Name = @'
+@option.Name@
+'@
+)
+$ErrorActionPreference = "Stop"
+$ProgressPreference = "SilentlyContinue"
+$host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(150,50)
+
+if($Condition){$Condition = $Condition.Split(";")}
+
+# Check script conditions, PowerShell expressions & WMI queries
+$Condition | ?{$_.Trim() -ne  ""} | %{
+   if($_ -like "select *"){
+      if(-not(gwmi -query $_)) {exit}
+   }
+   else{
+      if(-not(invoke-command -ScriptBlock ([Scriptblock]::Create($_)))) {exit}
+   }
+}
+
+$adapters = Get-WMIObject -Class Win32_NetworkAdapter | ? NetConnectionID -like $Name
+
+foreach($adapter in $adapters){
+   $config = $adapter.GetRelated('Win32_NetworkAdapterConfiguration')
+   if($config.IPEnabled -eq $true -and $config.TcpipNetbiosOptions -ne 2){
+      $config.SetTcpipNetbios(2) | Out-Null
+      Write-Output "Disabled NetBIOS on the network adapter $($adapter.NetConnectionID)."
+   }
+}
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -nologo -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <timeout>24h</timeout>
+    <uuid>10906173-cafe-4997-b4da-383dbb027f3c</uuid>
+  </job>
+</joblist>

@@ -1,0 +1,74 @@
+<joblist>
+  <job>
+    <context>
+      <options preserveOrder='true'>
+        <option name='Computer' required='true' />
+        <option name='Username' required='true' value='Administrator' />
+        <option name='Password' required='true' secure='true' valueExposed='true' />
+        <option name='User.Username' required='true' />
+      </options>
+    </context>
+    <description>Remove a local user using a remote session.</description>
+    <dispatch>
+      <excludePrecedence>true</excludePrecedence>
+      <keepgoing>true</keepgoing>
+      <rankOrder>ascending</rankOrder>
+      <successOnEmptyNodeFilter>false</successOnEmptyNodeFilter>
+      <threadcount>32</threadcount>
+    </dispatch>
+    <executionEnabled>true</executionEnabled>
+    <group>Assessment and Deployment Kit</group>
+    <id>dd83aed2-d378-4a41-8e39-13826663124e</id>
+    <loglevel>INFO</loglevel>
+    <name>Remove User</name>
+    <nodeFilterEditable>true</nodeFilterEditable>
+    <nodefilters>
+      <filter>nonodes</filter>
+    </nodefilters>
+    <nodesSelectedByDefault>true</nodesSelectedByDefault>
+    <scheduleEnabled>true</scheduleEnabled>
+    <sequence keepgoing='false' strategy='node-first'>
+      <command>
+        <description>PowerShell Inline Script</description>
+        <fileExtension>ps1</fileExtension>
+        <script><![CDATA[#requires -version 2
+<#
+.SYNOPSIS
+  Returns the PowerShell engine version using the VMS log format
+.DESCRIPTION
+  The $PSVersionTable built-in variable is the most reliable method of determining the PowerShell version.
+  Uses the Write-VLog function to return the PowerShell version in the VMS log format.
+  The PowerShell major version is returned in the Data column and a comment in the Message column.
+.PARAMETER <Parameter_Name>
+    <Brief description of parameter input required. Repeat this attribute if required>
+.INPUTS
+  None
+.OUTPUTS
+  <Outputs if any, otherwise state None - example: Log file stored in C:\Windows\Temp\<name>.log>
+.NOTES
+  Version:        1.0
+  Author:         Espen Blikstad
+  Creation Date:  05.02.2016
+  Purpose/Change: Initial script development
+#>
+$ErrorActionPreference = "Stop"
+
+# Store Rundeck options in PowerShell variables
+$option_Computer = "@option.Computer@"
+$option_User_Username = "@option.User.Username@"
+
+$secpasswd = ConvertTo-SecureString "@option.Password@" -AsPlainText -Force
+$credential = New-Object System.Management.Automation.PSCredential ("@option.Username@", $secpasswd)
+
+Invoke-Command -Computer $option_Computer -Authentication CredSSP -Credential $credential -Script {
+    Remove-LocalUser -Name $using:option_User_Username
+    Write-Output "Revmoed local user $($using:option_User_Username)"
+}
+]]></script>
+        <scriptargs />
+        <scriptinterpreter>powershell.exe -inputformat none -noninteractive -command</scriptinterpreter>
+      </command>
+    </sequence>
+    <uuid>dd83aed2-d378-4a41-8e39-13826663124e</uuid>
+  </job>
+</joblist>
