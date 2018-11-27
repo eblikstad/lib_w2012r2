@@ -2,7 +2,7 @@
   <job>
     <context>
       <options preserveOrder='true'>
-        <option delimiter=';' multivalued='true' name='Condition' value='SELECT * FROM Win32_OperatingSystem WHERE Version LIKE &apos;6.3%&apos; AND (ProductType=2 OR ProductType=3)' valuesUrl='file:/option/condition.json'>
+        <option delimiter=';' multivalued='true' name='Condition' value='SELECT * FROM Win32_OperatingSystem WHERE (Version LIKE &apos;6.3%&apos; OR Version LIKE &apos;10.0%&apos;) AND (ProductType=2 OR ProductType=3)' valuesUrl='file:/option/condition.json'>
           <description>Specifies conditions for the job. Can be CIM queries and PowerShell statements.</description>
         </option>
         <option delimiter=';' multivalued='true' name='SuccessCode' />
