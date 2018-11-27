@@ -11,7 +11,6 @@
         <option name='ImageIndex' required='true'>
           <description>Index number of the Windows image.</description>
         </option>
-        <option name='Temp' required='true' value='D:\Image\Temp' />
       </options>
     </context>
     <description>Adds drivers to an offline Windows image. Driver inf files in subdirectories are added if not already present in the image.</description>
@@ -70,7 +69,7 @@ $host.UI.RawUI.BufferSize = new-object System.Management.Automation.Host.Size(51
 $option_Drivers = "@option.Drivers@"
 $option_Image = "@option.Image@"
 $option_ImageIndex = @option.ImageIndex@
-$option_Temp = "@option.Temp@"
+#$option_Temp = "@option.Temp@"
 $job_ExecId = @job.execid@
 
 # Get the image details
@@ -78,7 +77,9 @@ $image = Get-WindowsImage -ImagePath $option_Image -Index @option.ImageIndex@
 Write-Output "Mounting the image ""$($image.ImageName)"" (""$option_Image"", index $option_ImageIndex)."
 
 # Create the image mount directory
-$path = "$option_Temp\$job_ExecId.wim"
+#$path = "$option_Temp\$job_ExecId.wim"
+$path = [System.IO.Path]::GetTempFileName()
+del $path
 if(-Not(Test-Path $path)){New-Item -Path $path -Type directory | Out-Null}
 
 # Mount the image
